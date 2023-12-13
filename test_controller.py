@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS  # Import the CORS extension
 from jsonrpclib.SimpleJSONRPCServer import SimpleJSONRPCServer
 from daq_wrapper import DAQM973A
+from waitress import serve
 from tests_cases import(
                 test_5_2,
                 test_5_3,
@@ -26,32 +27,6 @@ from tests_cases import(
                 test_5_7_3,
                 )
 from config import *
-
-app = Flask(__name__)
-
-# Enable CORS for the entire application
-CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
-
-# Add a decorator to ensure CORS headers are added to every response
-@app.after_request
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = 'http://127.0.0.1:5500'
-    response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-    response.headers['Access-Control-Max-Age'] = '3600'
-    return response
-
-# Add an OPTIONS route to handle preflight requests
-@app.route('/', methods=['OPTIONS'])
-def options():
-    return '', 204
-
-# a teszt végén ha error vagy NOK alap helyzetbe állítás
-
-# after test:
-#   (in every case) reset daq
-#   if a test succeed we leave psu turned on
-#   else (test fails = returns nok or error) we turn psu off
 
 
 test_spec_dict = {
@@ -630,54 +605,53 @@ def terminate_request(*args):
 
     return {"status": return_status}
 
+def create_app():
+    app = Flask(__name__)
+    CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
+    return app
+
+app = create_app()
+
+CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
+
+@app.route("/", methods=["POST", "OPTIONS"])
+def rpc_handler():
+    # Handle preflight request
+    if request.method == "OPTIONS":
+        response = jsonify({"message": "Preflight check successful"})
+        response.headers.add("Access-Control-Allow-Origin", "http://127.0.0.1:5500")
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        response.headers.add("Access-Control-Max-Age", "3600")
+        return response
+
+    # Handle the actual JSON-RPC request
+    json_data = request.get_json()
+    method = json_data.get("method")
+    params = json_data.get("params")
+
+    # Call the appropriate RPC function based on the method
+    if method == "process_start_request":
+        return process_start_request(*params)
+    elif method == "result_request":
+        return result_request(*params)
+    elif method == "terminate_request":
+        return terminate_request(*params)
+    else:
+        return jsonify({"error": "Unknown method"}), 400
+
 def main():
     print("Main")
-    # validate config
+    # Validate config
     e = validate_config(test_spec_dict)
     if e:
         print(e)
         return
 
-    print("config is correct, starting server...")
-    app = Flask(__name__)
+    print("Config is correct, starting server with Waitress...")
 
-    CORS(app)
-
-    @app.route("/", methods=["POST"])
-    def rpc_handler():
-        # Parse the JSON-RPC request
-        json_data = request.get_json()
-        method = json_data.get("method")
-        params = json_data.get("params")
-
-        # Call the appropriate RPC function based on the method
-        if method == "process_start_request":
-            return process_start_request(*params)
-        elif method == "result_request":
-            return result_request(*params)
-        elif method == "terminate_request":
-            return terminate_request(*params)
-        else:
-            return jsonify({"error": "Unknown method"}), 400
-
-    # Start the server with CORS enabled
-    
-    app.add_url_rule("/", "process_start_request", process_start_request, methods=["POST"])
-    app.add_url_rule("/", "result_request", result_request, methods=["POST"])
-    app.add_url_rule("/", "terminate_request", terminate_request, methods=["POST"])
-    
-    app.run(host="localhost", port=1006)
-    app.register_multicall_functions()
-    app.serve_forever()
-    # start server
-    # server = SimpleJSONRPCServer(("localhost", 1006))
-    # print("SERVER IP:", server.server_address)
-    # server.register_multicall_functions()
-    # server.register_function(process_start_request)
-    # server.register_function(result_request)
-    # server.register_function(terminate_request)
-    # print("server started")
-    # server.serve_forever()
+    # Use Waitress as the WSGI server
+    serve(app, host="localhost", port=1006)
 
 if __name__ == "__main__":
     main()
