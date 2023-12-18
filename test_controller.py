@@ -607,19 +607,17 @@ def terminate_request(*args):
 
 def create_app():
     app = Flask(__name__)
-    CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
+    CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
     return app
 
 app = create_app()
-
-CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
 
 @app.route("/", methods=["POST", "OPTIONS"])
 def rpc_handler():
     # Handle preflight request
     if request.method == "OPTIONS":
         response = jsonify({"message": "Preflight check successful"})
-        response.headers.add("Access-Control-Allow-Origin", "http://127.0.0.1:5500")
+        response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type")
         response.headers.add("Access-Control-Max-Age", "3600")
@@ -651,7 +649,7 @@ def main():
     print("Config is correct, starting server with Waitress...")
 
     # Use Waitress as the WSGI server
-    serve(app, host="localhost", port=1006)
+    serve(app, host="localhost", port=5000)
 
 if __name__ == "__main__":
     main()
